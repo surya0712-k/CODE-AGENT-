@@ -1,0 +1,19 @@
+# LiveKit (required for voice + web)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+
+# Agent dispatch — must match AGENT_NAME in frontend/.env.local
+AGENT_NAME=code-voice-agent
+
+# Cursor SDK (required for code tools)
+CURSOR_API_KEY=
+CURSOR_RUNTIME=local
+CURSOR_DEFAULT_CWD=
+# Comma-separated directories; workspace paths must live under one of these roots
+CURSOR_ALLOWED_ROOTS=
+
+# Optional: direct model keys if not using LiveKit Inference
+# OPENAI_API_KEY=
+# DEEPGRAM_API_KEY=
+# CARTESIA_API_KEY=

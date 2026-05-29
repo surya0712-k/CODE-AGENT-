@@ -1,0 +1,9 @@
+# Build temp / NuGet cache (keep FolderPicker.exe + *.dll in repo)
+*.nupkg
+*.zip
+packages/
+packages2/
+*-extract/
+.wacp*/
+wacp/
+wacp-core/
