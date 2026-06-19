@@ -28,6 +28,9 @@ export interface AppConfig {
   // agent dispatch configuration
   agentName?: string;
 
+  /** Hint shown above controls before the first chat message. */
+  preConnectMessage?: string;
+
   // LiveKit Cloud Sandbox configuration
   sandboxId?: string;
 }
@@ -47,13 +50,13 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   logoDark: '/lk-logo-dark.svg',
   accentDark: '#1fd5f9',
   startButtonText: 'Start call',
+  preConnectMessage: 'Speak or open transcript to type',
 
   // Lightweight bar visualizer (avoid aura/wave WebGL for sharper, faster UI)
   audioVisualizerType: 'bar',
   audioVisualizerBarCount: 5,
-  // optional: audio visualization configuration
-  // audioVisualizerColor: '#002cf2',
-  // audioVisualizerColorDark: '#1fd5f9',
+  audioVisualizerColor: '#002cf2',
+  audioVisualizerColorDark: '#1fd5f9',
   // audioVisualizerColorShift: 0.3,
   // audioVisualizerBarCount: 5,
   // audioVisualizerType: 'radial',

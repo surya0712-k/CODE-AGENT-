@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Track } from 'livekit-client';
 import { AnimatePresence, type MotionProps, motion } from 'motion/react';
 import {
@@ -11,12 +11,30 @@ import {
 import { cn } from '@/lib/shadcn/utils';
 import { AudioVisualizer } from './audio-visualizer';
 
-const ANIMATION_TRANSITION: MotionProps['transition'] = {
+const ANIMATION_TRANSITION_SPRING: MotionProps['transition'] = {
   type: 'spring',
-  stiffness: 420,
+  stiffness: 320,
   damping: 32,
   mass: 0.8,
 };
+
+const ANIMATION_TRANSITION_INSTANT: MotionProps['transition'] = {
+  duration: 0,
+};
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  return reduced;
+}
 
 const tileViewClassNames = {
   // GRID
@@ -24,7 +42,7 @@ const tileViewClassNames = {
   grid: [
     'h-full w-full',
     'grid gap-x-2 place-content-center',
-    'grid-cols-[1fr_1fr] grid-rows-[minmax(11rem,1fr)_1fr_5rem]',
+    'grid-cols-[1fr_1fr] grid-rows-[minmax(13rem,1fr)_1fr_5rem]',
   ],
   // Agent
   // chatOpen: true,
@@ -80,6 +98,80 @@ interface TileLayoutProps {
   audioVisualizerBarCount?: number;
 }
 
+type VisualizerProps = Omit<TileLayoutProps, 'chatOpen'>;
+
+function useAgentTileState() {
+  const { videoTrack: agentVideoTrack } = useVoiceAssistant();
+  const [screenShareTrack] = useTracks([Track.Source.ScreenShare]);
+  const cameraTrack: TrackReference | undefined = useLocalTrackRef(Track.Source.Camera);
+  const isCameraEnabled = cameraTrack && !cameraTrack.publication.isMuted;
+  const isScreenShareEnabled = screenShareTrack && !screenShareTrack.publication.isMuted;
+  const isAvatar = agentVideoTrack !== undefined;
+  const videoWidth = agentVideoTrack?.publication.dimensions?.width ?? 0;
+  const videoHeight = agentVideoTrack?.publication.dimensions?.height ?? 0;
+
+  return {
+    agentVideoTrack,
+    screenShareTrack,
+    cameraTrack,
+    isCameraEnabled,
+    isScreenShareEnabled,
+    hasSecondTile: isCameraEnabled || isScreenShareEnabled,
+    isAvatar,
+    videoWidth,
+    videoHeight,
+  };
+}
+
+/** Small centered visualizer for transcript mode — sits in its own row above messages. */
+export function CompactAgentTile({
+  audioVisualizerType,
+  audioVisualizerColor,
+  audioVisualizerColorShift,
+  audioVisualizerBarCount,
+  audioVisualizerRadialBarCount,
+  audioVisualizerRadialRadius,
+  audioVisualizerGridRowCount,
+  audioVisualizerGridColumnCount,
+  audioVisualizerWaveLineWidth,
+}: VisualizerProps) {
+  const { agentVideoTrack, isAvatar, videoWidth, videoHeight } = useAgentTileState();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.92 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.2 }}
+      className="pointer-events-none flex size-[4.5rem] items-center justify-center"
+      aria-hidden
+    >
+      {!isAvatar ? (
+        <AudioVisualizer
+          audioVisualizerType={audioVisualizerType ?? 'bar'}
+          audioVisualizerColor={audioVisualizerColor}
+          audioVisualizerColorShift={audioVisualizerColorShift}
+          audioVisualizerBarCount={audioVisualizerBarCount ?? 5}
+          audioVisualizerRadialBarCount={audioVisualizerRadialBarCount}
+          audioVisualizerRadialRadius={audioVisualizerRadialRadius}
+          audioVisualizerGridRowCount={audioVisualizerGridRowCount}
+          audioVisualizerGridColumnCount={audioVisualizerGridColumnCount}
+          audioVisualizerWaveLineWidth={audioVisualizerWaveLineWidth}
+          isChatOpen
+          className="border-input bg-background size-[4.5rem] rounded-full border shadow-md"
+          style={{ color: audioVisualizerColor, transform: 'translateZ(0)' }}
+        />
+      ) : (
+        <VideoTrack
+          width={videoWidth}
+          height={videoHeight}
+          trackRef={agentVideoTrack}
+          className="size-[4.5rem] overflow-hidden rounded-full bg-black object-cover"
+        />
+      )}
+    </motion.div>
+  );
+}
+
 export function TileLayout({
   chatOpen,
   audioVisualizerType,
@@ -92,30 +184,37 @@ export function TileLayout({
   audioVisualizerGridColumnCount,
   audioVisualizerWaveLineWidth,
 }: TileLayoutProps) {
-  const { videoTrack: agentVideoTrack } = useVoiceAssistant();
-  const [screenShareTrack] = useTracks([Track.Source.ScreenShare]);
-  const cameraTrack: TrackReference | undefined = useLocalTrackRef(Track.Source.Camera);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const animationTransition = prefersReducedMotion
+    ? ANIMATION_TRANSITION_INSTANT
+    : ANIMATION_TRANSITION_SPRING;
+  const {
+    agentVideoTrack,
+    screenShareTrack,
+    cameraTrack,
+    isCameraEnabled,
+    isScreenShareEnabled,
+    hasSecondTile,
+    isAvatar,
+    videoWidth,
+    videoHeight,
+  } = useAgentTileState();
 
-  const isCameraEnabled = cameraTrack && !cameraTrack.publication.isMuted;
-  const isScreenShareEnabled = screenShareTrack && !screenShareTrack.publication.isMuted;
-  const hasSecondTile = isCameraEnabled || isScreenShareEnabled;
+  const animationDelay = 0.15;
 
-  const animationDelay = chatOpen ? 0 : 0.15;
-  const isAvatar = agentVideoTrack !== undefined;
-  const videoWidth = agentVideoTrack?.publication.dimensions?.width ?? 0;
-  const videoHeight = agentVideoTrack?.publication.dimensions?.height ?? 0;
+  if (chatOpen) {
+    return null;
+  }
 
   return (
-    <div className="absolute inset-x-0 top-8 bottom-32 z-50 md:top-12 md:bottom-40">
+    <div className="absolute inset-x-0 top-20 bottom-32 z-10 md:top-24 md:bottom-40">
       <div className="relative mx-auto h-full max-w-2xl px-4 md:px-0">
         <div className={cn(tileViewClassNames.grid)}>
           {/* Agent */}
           <div
             className={cn([
               'grid',
-              !chatOpen && tileViewClassNames.agentChatClosed,
-              chatOpen && hasSecondTile && tileViewClassNames.agentChatOpenWithSecondTile,
-              chatOpen && !hasSecondTile && tileViewClassNames.agentChatOpenWithoutSecondTile,
+              tileViewClassNames.agentChatClosed,
             ])}
           >
             <AnimatePresence mode="popLayout">
@@ -129,10 +228,7 @@ export function TileLayout({
                     duration: 0.25,
                     delay: animationDelay,
                   }}
-                  className={cn(
-                    'relative flex items-center justify-center',
-                    chatOpen ? 'size-[72px]' : 'size-[min(16rem,42vw)] md:size-[15rem]'
-                  )}
+                  className="relative flex size-[min(18rem,48vw)] items-center justify-center md:size-[17rem]"
                 >
                   <AudioVisualizer
                     key="audio-visualizer"
@@ -145,12 +241,8 @@ export function TileLayout({
                     audioVisualizerGridRowCount={audioVisualizerGridRowCount}
                     audioVisualizerGridColumnCount={audioVisualizerGridColumnCount}
                     audioVisualizerWaveLineWidth={audioVisualizerWaveLineWidth}
-                    isChatOpen={chatOpen}
-                    className={cn(
-                      'bg-background rounded-[50px] border border-transparent transition-[border,box-shadow]',
-                      chatOpen ? 'size-[72px]' : 'size-full max-w-[15rem]',
-                      chatOpen && 'border-input shadow-md'
-                    )}
+                    isChatOpen={false}
+                    className="bg-background size-full max-w-[17rem] rounded-[50px] border border-transparent transition-[border,box-shadow]"
                     style={{
                       color: audioVisualizerColor,
                       transform: 'translateZ(0)',
@@ -175,10 +267,10 @@ export function TileLayout({
                     maskImage:
                       'radial-gradient(circle, rgba(0, 0, 0, 1) 0, rgba(0, 0, 0, 1) 500px, transparent 500px)',
                     filter: 'blur(0px)',
-                    borderRadius: chatOpen ? 6 : 12,
+                    borderRadius: 12,
                   }}
                   transition={{
-                    ...ANIMATION_TRANSITION,
+                    ...animationTransition,
                     delay: animationDelay,
                     maskImage: {
                       duration: 1,
@@ -187,16 +279,12 @@ export function TileLayout({
                       duration: 1,
                     },
                   }}
-                  className={cn(
-                    'overflow-hidden bg-black drop-shadow-xl/80',
-                    chatOpen ? 'h-[90px]' : 'h-auto w-full'
-                  )}
+                  className="h-auto w-full overflow-hidden bg-black drop-shadow-xl/80"
                 >
                   <VideoTrack
                     width={videoWidth}
                     height={videoHeight}
                     trackRef={agentVideoTrack}
-                    className={cn(chatOpen && 'size-[90px] object-cover')}
                   />
                 </motion.div>
               )}
@@ -206,8 +294,7 @@ export function TileLayout({
           <div
             className={cn([
               'grid',
-              chatOpen && tileViewClassNames.secondTileChatOpen,
-              !chatOpen && tileViewClassNames.secondTileChatClosed,
+              tileViewClassNames.secondTileChatClosed,
             ])}
           >
             {/* Camera & Screen Share */}
@@ -230,7 +317,7 @@ export function TileLayout({
                     scale: 0,
                   }}
                   transition={{
-                    ...ANIMATION_TRANSITION,
+                    ...animationTransition,
                     delay: animationDelay,
                   }}
                   className="aspect-square size-[90px] drop-shadow-lg/20"

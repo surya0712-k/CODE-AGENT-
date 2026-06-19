@@ -28,8 +28,24 @@ class Settings(BaseSettings):
     cursor_default_cwd: str = Field(default="", alias="CURSOR_DEFAULT_CWD")
     cursor_allowed_roots: str = Field(default="", alias="CURSOR_ALLOWED_ROOTS")
     cursor_cloud_repo: str = Field(default="", alias="CURSOR_CLOUD_REPO")
+    cloud_auto_create_pr: bool = Field(default=True, alias="CLOUD_AUTO_CREATE_PR")
+
+    project_registry_path: str = Field(default="", alias="PROJECT_REGISTRY_PATH")
+    telephony_pin: str = Field(default="", alias="TELEPHONY_PIN")
+    telephony_allowed_callers: str = Field(
+        default="", alias="TELEPHONY_ALLOWED_CALLERS"
+    )
 
     agent_name: str = Field(default="code-voice-agent", alias="AGENT_NAME")
+
+    @field_validator("cloud_auto_create_pr", mode="before")
+    @classmethod
+    def parse_bool(cls, value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return True
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
     @field_validator("cursor_runtime", mode="before")
     @classmethod
@@ -78,6 +94,20 @@ class Settings(BaseSettings):
         if not self.cursor_default_cwd.strip():
             return None
         return self.validate_workspace(self.cursor_default_cwd)
+
+    def telephony_allowed_callers_list(self) -> list[str]:
+        if not self.telephony_allowed_callers.strip():
+            return []
+        return [
+            part.strip()
+            for part in self.telephony_allowed_callers.split(",")
+            if part.strip()
+        ]
+
+    def registry_path(self) -> Path:
+        from project_registry import default_registry_path
+
+        return default_registry_path(self.project_registry_path)
 
 
 def _is_under_root(path: Path, root: Path) -> bool:

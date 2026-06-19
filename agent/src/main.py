@@ -21,6 +21,15 @@ from config import get_settings
 from cursor_bridge import CursorBridge, publish_to_room
 from env_loader import load_project_env
 from goodbye import looks_like_goodbye
+from project_registry import ProjectRegistry
+from telephony import (
+    detect_telephony_session,
+    is_sip_participant,
+    participant_metadata_pin,
+    should_skip_web_workspace,
+    verify_caller_allowed,
+    verify_telephony_pin,
+)
 from voice_agent import CodeVoiceAgent, SessionData
 
 GOODBYE_END_DELAY_SEC = 1.8
@@ -56,27 +65,40 @@ server.setup_fnc = prewarm
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
 
-    session_data = SessionData()
+    registry = ProjectRegistry.load(settings.registry_path())
+    is_telephony = detect_telephony_session(
+        ctx.room.name, ctx.room.remote_participants
+    )
+
+    session_data = SessionData(
+        is_telephony=is_telephony,
+        registry=registry,
+        telephony_pin_verified=not bool(settings.telephony_pin.strip()),
+    )
     session_data.bridge = CursorBridge(
         settings,
         publish=lambda payload: publish_to_room(ctx.room, payload),
     )
 
-    default = settings.default_workspace()
-    if default is not None:
-        try:
-            await session_data.bridge.set_workspace(str(default))
-            session_data.workspace = str(default)
-            logger.info("Default workspace: %s", session_data.workspace)
-        except ValueError as err:
-            logger.warning("Invalid CURSOR_DEFAULT_CWD: %s", err)
+    if is_telephony:
+        logger.info("Telephony session detected for room %s", ctx.room.name)
+    else:
+        default = settings.default_workspace()
+        if default is not None:
+            try:
+                await session_data.bridge.set_workspace(str(default))
+                session_data.workspace = str(default)
+                session_data.workspace_target = session_data.bridge.target
+                logger.info("Default workspace: %s", session_data.workspace)
+            except ValueError as err:
+                logger.warning("Invalid CURSOR_DEFAULT_CWD: %s", err)
 
     async def apply_workspace_from_attributes(
         participant: rtc.RemoteParticipant,
     ) -> None:
         if session_data.bridge is None:
             return
-        if participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT:
+        if should_skip_web_workspace(participant, session_data.is_telephony):
             return
         path = (participant.attributes.get("workspace_path") or "").strip()
         if not path:
@@ -84,6 +106,7 @@ async def entrypoint(ctx: JobContext) -> None:
         try:
             resolved = await session_data.bridge.set_workspace(path)
             session_data.workspace = resolved
+            session_data.workspace_target = session_data.bridge.target
             logger.info(
                 "Workspace from participant %s: %s",
                 participant.identity,
@@ -92,13 +115,39 @@ async def entrypoint(ctx: JobContext) -> None:
         except ValueError as err:
             logger.warning("Invalid workspace from participant: %s", err)
 
+    async def handle_telephony_participant(
+        participant: rtc.RemoteParticipant,
+    ) -> None:
+        if not is_sip_participant(participant):
+            return
+
+        session_data.is_telephony = True
+
+        caller_error = verify_caller_allowed(participant, settings)
+        if caller_error:
+            logger.warning("Rejected caller %s: %s", participant.identity, caller_error)
+            return
+
+        meta_pin = participant_metadata_pin(participant)
+        if meta_pin and verify_telephony_pin(meta_pin, settings):
+            session_data.telephony_pin_verified = True
+
+        logger.info(
+            "SIP participant connected: identity=%s attrs=%s",
+            participant.identity,
+            dict(participant.attributes or {}),
+        )
+
     def schedule_workspace_from_participant(
         participant: rtc.RemoteParticipant,
     ) -> None:
         asyncio.create_task(apply_workspace_from_attributes(participant))
+        asyncio.create_task(handle_telephony_participant(participant))
 
     @ctx.room.on("participant_connected")
     def on_participant_connected(participant: rtc.RemoteParticipant) -> None:
+        if is_sip_participant(participant):
+            session_data.is_telephony = True
         schedule_workspace_from_participant(participant)
 
     @ctx.room.on("participant_attributes_changed")
@@ -157,7 +206,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     try:
         await session.start(
-            agent=CodeVoiceAgent(settings),
+            agent=CodeVoiceAgent(settings, is_telephony=session_data.is_telephony),
             room=ctx.room,
             room_options=room_io.RoomOptions(
                 audio_input=room_io.AudioInputOptions(
@@ -176,8 +225,16 @@ async def entrypoint(ctx: JobContext) -> None:
                 path = payload.get("path", "")
                 if not path:
                     return json.dumps({"ok": False, "error": "path is required"})
+                if session_data.is_telephony:
+                    return json.dumps(
+                        {
+                            "ok": False,
+                            "error": "Workspace path is not used in telephony mode",
+                        }
+                    )
                 resolved = await session_data.bridge.set_workspace(path)
                 session_data.workspace = resolved
+                session_data.workspace_target = session_data.bridge.target
                 return json.dumps({"ok": True, "workspace": resolved})
             except ValueError as err:
                 return json.dumps({"ok": False, "error": str(err)})
@@ -188,7 +245,11 @@ async def entrypoint(ctx: JobContext) -> None:
         for participant in ctx.room.remote_participants.values():
             schedule_workspace_from_participant(participant)
 
-        logger.info("Agent connected to room %s", ctx.room.name)
+        logger.info(
+            "Agent connected to room %s (telephony=%s)",
+            ctx.room.name,
+            session_data.is_telephony,
+        )
     finally:
         if session_data.bridge is not None:
             await session_data.bridge.close()
@@ -196,4 +257,3 @@ async def entrypoint(ctx: JobContext) -> None:
 
 if __name__ == "__main__":
     cli.run_app(server)
-    

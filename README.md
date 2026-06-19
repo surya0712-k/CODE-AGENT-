@@ -303,18 +303,44 @@ To change the voice LLM, edit `llm=inference.LLM(model="...")` in `voice_agent.p
 | Tool | Purpose |
 |------|---------|
 | `set_workspace` | Point Cursor at a local repo |
+| `select_cloud_project` | Resolve spoken project name → GitHub repo (cloud / telephony) |
+| `verify_call_pin` | Validate telephony PIN when `TELEPHONY_PIN` is set |
 | `inspect_code` | Read-only analysis (background job) |
-| `fix_issue` | Code changes (requires verbal confirm) |
+| `fix_issue` | Code changes (requires verbal confirm; cloud opens PR) |
 | `confirm_fix` | Apply pending fix after user says yes |
 | `get_cursor_job_status` | Poll job progress |
 | `end_call` | End session after goodbye (also auto-detected from speech) |
 
-Job updates are published on LiveKit data topic `cursor_job` and shown in the UI job log.
+Job updates are published on LiveKit data topic `cursor_job` and shown in the UI job log (web only).
 
 ## Cursor runtime
 
-- **local** (default): `CURSOR_RUNTIME=local`, uses `LocalAgentOptions(cwd=…)`
-- **cloud** (stub): set `CURSOR_RUNTIME=cloud` and `CURSOR_CLOUD_REPO=github.com/org/repo`
+| Mode | `CURSOR_RUNTIME` | Workspace source |
+|------|------------------|------------------|
+| Local dev | `local` | Folder picker + `workspace_path` JWT attribute |
+| Cloud / telephony | `cloud` | `projects.yaml` registry + `select_cloud_project` |
+
+- **local** (default): `LocalAgentOptions(cwd=…)` on disk.
+- **cloud**: `CloudAgentOptions` with per-session repo from registry; `CLOUD_AUTO_CREATE_PR=true` opens PRs for fixes.
+
+Edit `agent/projects.yaml` (or set `PROJECT_REGISTRY_PATH`) with project names and GitHub URLs.
+
+## Cloud worker + inbound telephony
+
+Deploy the agent worker 24/7 for phone calls. Full setup: **[docs/telephony.md](docs/telephony.md)**.
+
+Summary:
+
+1. Hardened `agent/Dockerfile` — `pip install`, `download-files`, `projects.yaml` baked in.
+2. LiveKit Phone Number + SIP dispatch rule (`roomPrefix: call-`, `agentName: code-voice-agent`).
+3. Twilio/Telnyx: point SIP trunk at LiveKit — same dispatch rule, different trunk credentials.
+4. Optional `TELEPHONY_PIN` and `TELEPHONY_ALLOWED_CALLERS` before going public.
+
+```bash
+cd agent
+docker build -t code-voice-agent .
+docker run --env-file ../.env -e CURSOR_RUNTIME=cloud code-voice-agent
+```
 
 ## Troubleshooting: “Cursor internal error” / coding task failed
 
@@ -351,6 +377,7 @@ Other checks:
 - The bundled `/api/token` route is **dev-only** (no auth). Add authentication before production.
 - Restrict workspaces with `CURSOR_ALLOWED_ROOTS`.
 - Never expose `CURSOR_API_KEY` to the browser.
+- Telephony: use `TELEPHONY_PIN`, `TELEPHONY_ALLOWED_CALLERS`, and `CLOUD_AUTO_CREATE_PR=true` (see [docs/telephony.md](docs/telephony.md)).
 
 ## License
 

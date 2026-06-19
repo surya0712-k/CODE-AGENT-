@@ -121,4 +121,41 @@
   body {
     @apply bg-background text-foreground;
   }
+  a[href],
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  label[for],
+  summary {
+    @apply cursor-pointer;
+  }
+  input:not([type='checkbox']):not([type='radio']),
+  textarea {
+    @apply cursor-text;
+  }
+  button:disabled,
+  [aria-disabled='true'] {
+    @apply cursor-not-allowed;
+  }
+}
+
+@layer utilities {
+  .job-badge-running {
+    @apply bg-amber-500/15 text-amber-800 dark:text-amber-300;
+  }
+  .job-badge-completed {
+    @apply bg-emerald-500/15 text-emerald-800 dark:text-emerald-300;
+  }
+  .job-badge-failed {
+    @apply bg-destructive/15 text-destructive;
+  }
+  .job-badge-pending {
+    @apply bg-muted text-muted-foreground;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-reduce-disable-spring * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

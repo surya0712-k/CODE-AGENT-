@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -17,6 +16,7 @@ from cursor_sdk import LocalAgentOptions as SdkLocalAgentOptions
 
 from config import Settings
 from jobs import Job, JobStatus
+from workspace import WorkspaceTarget
 
 logger = logging.getLogger("cursor_bridge")
 
@@ -41,17 +41,49 @@ class CursorBridge:
         self._publish = publish
         self._client: AsyncClient | None = None
         self._agent: AsyncAgent | None = None
-        self._workspace: str | None = None
+        self._target: WorkspaceTarget | None = None
 
     @property
     def workspace(self) -> str | None:
-        return self._workspace
+        if self._target and self._target.mode == "local":
+            return self._target.local_path
+        return None
+
+    @property
+    def target(self) -> WorkspaceTarget | None:
+        return self._target
+
+    def is_configured(self) -> bool:
+        if self._target is not None and self._target.is_configured():
+            return True
+        if self._settings.cursor_runtime == "local":
+            return self._settings.default_workspace() is not None
+        return bool(self._settings.cursor_cloud_repo)
 
     async def set_workspace(self, path: str) -> str:
         resolved = self._settings.validate_workspace(path)
-        self._workspace = str(resolved)
+        self._target = WorkspaceTarget(
+            mode="local",
+            local_path=str(resolved),
+        )
         await self._reset_runtime()
-        return self._workspace
+        return str(resolved)
+
+    async def set_cloud_project(
+        self,
+        *,
+        project_name: str,
+        repo_url: str,
+        starting_ref: str = "main",
+    ) -> WorkspaceTarget:
+        self._target = WorkspaceTarget(
+            mode="cloud",
+            cloud_repo_url=repo_url,
+            project_name=project_name,
+            starting_ref=starting_ref or "main",
+        )
+        await self._reset_runtime()
+        return self._target
 
     async def close(self) -> None:
         await self._reset_runtime()
@@ -70,9 +102,28 @@ class CursorBridge:
                 logger.exception("Failed to close Cursor bridge client")
             self._client = None
 
+    def _effective_target(self) -> WorkspaceTarget:
+        if self._target is not None and self._target.is_configured():
+            return self._target
+
+        if self._settings.cursor_runtime == "cloud" and self._settings.cursor_cloud_repo:
+            return WorkspaceTarget(
+                mode="cloud",
+                cloud_repo_url=self._settings.cursor_cloud_repo,
+                project_name="default",
+                starting_ref="main",
+            )
+
+        default = self._settings.default_workspace()
+        if default is not None:
+            return WorkspaceTarget(mode="local", local_path=str(default))
+
+        return WorkspaceTarget(mode="local")
+
     def _bridge_workspace(self) -> str:
-        if self._workspace:
-            return self._workspace
+        target = self._effective_target()
+        if target.mode == "local" and target.local_path:
+            return target.local_path
         default = self._settings.default_workspace()
         if default is not None:
             return str(default)
@@ -135,41 +186,51 @@ class CursorBridge:
         await self._verify_cursor_api_access()
 
         client = await self._ensure_client()
-        runtime = self._settings.cursor_runtime
+        target = self._effective_target()
 
-        if runtime == "cloud":
-            if not self._settings.cursor_cloud_repo:
+        if target.mode == "cloud":
+            if not target.cloud_repo_url:
                 raise ValueError(
-                    "CURSOR_CLOUD_REPO is required when CURSOR_RUNTIME=cloud"
+                    "No cloud project selected. Say the project name or use "
+                    "select_cloud_project before inspecting or fixing code."
                 )
             self._agent = await AsyncAgent.create(
                 client=client,
                 model=self._settings.cursor_model,
                 api_key=self._settings.cursor_api_key,
                 cloud=CloudAgentOptions(
-                    repos=[CloudRepository(url=self._settings.cursor_cloud_repo)]
+                    repos=[
+                        CloudRepository(
+                            url=target.cloud_repo_url,
+                            starting_ref=target.starting_ref or "main",
+                        )
+                    ],
+                    auto_create_pr=self._settings.cloud_auto_create_pr,
                 ),
             )
         else:
-            if not self._workspace:
+            local_path = target.local_path
+            if not local_path:
                 default = self._settings.default_workspace()
                 if default is None:
                     raise ValueError(
                         "No workspace set. Call set_workspace or set CURSOR_DEFAULT_CWD"
                     )
-                self._workspace = str(default)
+                local_path = str(default)
+                self._target = WorkspaceTarget(mode="local", local_path=local_path)
 
             self._agent = await AsyncAgent.create(
                 client=client,
                 model=self._settings.cursor_model,
                 api_key=self._settings.cursor_api_key,
-                local=SdkLocalAgentOptions(cwd=self._workspace),
+                local=SdkLocalAgentOptions(cwd=local_path),
             )
 
         logger.info(
-            "Cursor agent ready: %s (model=%s)",
+            "Cursor agent ready: %s (model=%s, mode=%s)",
             self._agent.agent_id,
             self._settings.cursor_model,
+            target.mode,
         )
         return self._agent
 
@@ -291,6 +352,8 @@ async def publish_to_room(
     room: Any, payload: dict[str, Any], *, topic: str = "cursor_job"
 ) -> None:
     """Publish JSON events on the LiveKit data channel."""
+    import json
+
     data = json.dumps(payload).encode("utf-8")
     await room.local_participant.publish_data(
         data,

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSessionContext } from '@livekit/components-react';
@@ -9,6 +10,20 @@ import { WelcomeView } from '@/components/app/welcome-view';
 
 const MotionWelcomeView = motion.create(WelcomeView);
 const MotionSessionView = motion.create(AgentSessionView_01);
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  return reduced;
+}
 
 const VIEW_MOTION_PROPS = {
   variants: {
@@ -28,6 +43,17 @@ const VIEW_MOTION_PROPS = {
   },
 };
 
+const VIEW_MOTION_REDUCED = {
+  variants: {
+    visible: { opacity: 1 },
+    hidden: { opacity: 1 },
+  },
+  initial: 'visible',
+  animate: 'visible',
+  exit: 'visible',
+  transition: { duration: 0 },
+};
+
 interface ViewControllerProps {
   appConfig: AppConfig;
 }
@@ -35,6 +61,8 @@ interface ViewControllerProps {
 export function ViewController({ appConfig }: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
   const { resolvedTheme } = useTheme();
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const motionProps = prefersReducedMotion ? VIEW_MOTION_REDUCED : VIEW_MOTION_PROPS;
 
   return (
     <AnimatePresence mode="wait">
@@ -42,7 +70,7 @@ export function ViewController({ appConfig }: ViewControllerProps) {
       {!isConnected && (
         <MotionWelcomeView
           key="welcome"
-          {...VIEW_MOTION_PROPS}
+          {...motionProps}
           startButtonText={appConfig.startButtonText}
           onStartCall={start}
         />
@@ -51,7 +79,8 @@ export function ViewController({ appConfig }: ViewControllerProps) {
       {isConnected && (
         <MotionSessionView
           key="session-view"
-          {...VIEW_MOTION_PROPS}
+          {...motionProps}
+          preConnectMessage={appConfig.preConnectMessage}
           supportsChatInput={appConfig.supportsChatInput}
           supportsVideoInput={appConfig.supportsVideoInput}
           supportsScreenShare={appConfig.supportsScreenShare}

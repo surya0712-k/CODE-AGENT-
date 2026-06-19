@@ -47,7 +47,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
   const hdrs = await headers();
   const appConfig = await getAppConfig(hdrs);
   const styles = getStyles(appConfig);
-  const { pageTitle, pageDescription, companyName, logo, logoDark } = appConfig;
+  const { pageTitle, pageDescription, companyName } = appConfig;
 
   return (
     <html
@@ -71,38 +71,35 @@ export default async function RootLayout({ children }: RootLayoutProps) {
           enableSystem
           disableTransitionOnChange
         >
-          <header className="fixed top-0 left-0 z-50 hidden w-full flex-row justify-between p-6 md:flex">
-            <a
-              target="_blank"
-              rel="noopener noreferrer"
-              href="https://livekit.io"
-              className="scale-100 transition-transform duration-300 hover:scale-110"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logo} alt={`${companyName} Logo`} className="block size-6 dark:hidden" />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={logoDark ?? logo}
-                alt={`${companyName} Logo`}
-                className="hidden size-6 dark:block"
-              />
-            </a>
-            <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
-              Built with{' '}
-              <a
-                target="_blank"
-                rel="noopener noreferrer"
-                href="https://docs.livekit.io/agents"
-                className="underline underline-offset-4"
-              >
-                LiveKit Agents
-              </a>
-            </span>
+          <header className="border-border/40 bg-background/80 fixed top-0 left-0 z-50 flex w-full flex-row items-center justify-between border-b px-4 py-3 backdrop-blur-sm md:px-6">
+            <div className="flex items-center gap-2.5">
+              <div className="border-primary/25 bg-card flex size-7 items-center justify-center rounded-lg border">
+                <span className="text-primary font-mono text-[10px] font-bold">CA</span>
+              </div>
+              <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+                {companyName}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-muted-foreground hidden text-[10px] md:inline">
+                Powered by{' '}
+                <a
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  href="https://livekit.io"
+                  className="text-foreground cursor-pointer underline underline-offset-2"
+                >
+                  LiveKit
+                </a>
+              </span>
+              <ThemeToggle className="hidden w-auto md:flex" />
+            </div>
           </header>
 
-          {children}
-          <div className="group fixed bottom-0 left-1/2 z-50 mb-2 -translate-x-1/2">
-            <ThemeToggle className="translate-y-20 transition-transform delay-150 duration-300 group-hover:translate-y-0" />
+          <div className="pt-12">{children}</div>
+
+          <div className="fixed right-4 bottom-4 z-50 md:hidden">
+            <ThemeToggle />
           </div>
         </ThemeProvider>
       </body>

@@ -11,10 +11,11 @@ import {
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { cn } from '@/lib/shadcn/utils';
 import { JobLogPanel } from '@/components/app/job-log-panel';
+import { SessionCallHints, SessionStatusBar } from '@/components/app/session-status-bar';
 import { useCursorJobLog } from '@/hooks/useCursorJobLog';
 import { useEndCallOnSignal } from '@/hooks/useEndCallOnSignal';
 import { useSyncWorkspace } from '@/hooks/useSyncWorkspace';
-import { TileLayout } from './tile-view';
+import { CompactAgentTile, TileLayout } from './tile-view';
 
 const MotionMessage = motion.create(Shimmer);
 
@@ -160,7 +161,7 @@ export interface AgentSessionView_01Props {
 }
 
 export function AgentSessionView_01({
-  preConnectMessage = 'Agent is listening, ask it a question',
+  preConnectMessage = 'Speak or open transcript to type',
   supportsChatInput = true,
   supportsVideoInput = true,
   supportsScreenShare = true,
@@ -187,6 +188,15 @@ export function AgentSessionView_01({
   const [chatOpen, setChatOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { state: agentState } = useAgent();
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setPrefersReducedMotion(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const controls: AgentControlBarControls = {
     leave: true,
@@ -212,24 +222,48 @@ export function AgentSessionView_01({
       {...props}
     >
       <Fade top className="absolute inset-x-4 top-0 z-10 h-40" />
+      <div className="absolute inset-x-4 top-14 z-30 flex flex-col items-center gap-1.5 md:top-16">
+        <SessionStatusBar className="max-w-2xl" />
+        {messages.length === 0 && !chatOpen && (
+          <SessionCallHints className="max-w-md px-2" />
+        )}
+      </div>
       <JobLogPanel
         entries={jobEntries}
-        className="absolute top-4 right-4 z-20 hidden w-72 md:block"
+        className={cn(
+          'z-20 w-64',
+          chatOpen ? 'hidden md:block md:fixed md:bottom-36 md:left-6' : 'fixed bottom-36 left-3 md:bottom-40 md:left-6'
+        )}
       />
-      {/* transcript */}
 
-      <div className="absolute top-0 bottom-[135px] flex w-full flex-col md:bottom-[170px]">
+      {/* Transcript column: centered visualizer row + scrollable messages */}
+      <div className="absolute top-0 bottom-[135px] z-20 flex w-full flex-col md:bottom-[170px]">
         <AnimatePresence>
           {chatOpen && (
             <motion.div
               {...CHAT_MOTION_PROPS}
-              className="flex h-full w-full flex-col gap-4 space-y-3 transition-opacity duration-300 ease-out"
+              className="flex h-full min-h-0 w-full flex-col pt-[4.25rem] md:pt-[4.75rem]"
             >
-              <AgentChatTranscript
-                agentState={agentState}
-                messages={messages}
-                className="mx-auto w-full max-w-2xl [&_.is-user>div]:rounded-[22px] [&>div>div]:px-4 [&>div>div]:pt-40 md:[&>div>div]:px-6"
-              />
+              <div className="flex shrink-0 justify-center py-2">
+                <CompactAgentTile
+                  audioVisualizerType={audioVisualizerType}
+                  audioVisualizerColor={audioVisualizerColor}
+                  audioVisualizerColorShift={audioVisualizerColorShift}
+                  audioVisualizerBarCount={audioVisualizerBarCount}
+                  audioVisualizerRadialBarCount={audioVisualizerRadialBarCount}
+                  audioVisualizerRadialRadius={audioVisualizerRadialRadius}
+                  audioVisualizerGridRowCount={audioVisualizerGridRowCount}
+                  audioVisualizerGridColumnCount={audioVisualizerGridColumnCount}
+                  audioVisualizerWaveLineWidth={audioVisualizerWaveLineWidth}
+                />
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden px-4 pb-2 md:px-6">
+                <AgentChatTranscript
+                  agentState={agentState}
+                  messages={messages}
+                  className="mx-auto h-full w-full max-w-2xl [&_.is-user>div]:rounded-[22px]"
+                />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -256,15 +290,25 @@ export function AgentSessionView_01({
         {isPreConnectBufferEnabled && (
           <AnimatePresence>
             {messages.length === 0 && (
-              <MotionMessage
-                key="pre-connect-message"
-                duration={2}
-                aria-hidden={messages.length > 0}
-                {...SHIMMER_MOTION_PROPS}
-                className="pointer-events-none mx-auto block w-full max-w-2xl pb-4 text-center text-sm font-semibold"
-              >
-                {preConnectMessage}
-              </MotionMessage>
+              prefersReducedMotion ? (
+                <p
+                  key="pre-connect-message"
+                  aria-hidden={messages.length > 0}
+                  className="text-muted-foreground pointer-events-none mx-auto block w-full max-w-2xl pb-4 text-center text-sm font-semibold"
+                >
+                  {preConnectMessage}
+                </p>
+              ) : (
+                <MotionMessage
+                  key="pre-connect-message"
+                  duration={2}
+                  aria-hidden={messages.length > 0}
+                  {...SHIMMER_MOTION_PROPS}
+                  className="pointer-events-none mx-auto block w-full max-w-2xl pb-4 text-center text-sm font-semibold"
+                >
+                  {preConnectMessage}
+                </MotionMessage>
+              )
             )}
           </AnimatePresence>
         )}
@@ -277,6 +321,8 @@ export function AgentSessionView_01({
             isConnected={session.isConnected}
             onDisconnect={session.end}
             onIsChatOpenChange={setChatOpen}
+            chatToggleBadge={!chatOpen && messages.length > 0 ? `${messages.length}` : undefined}
+            showChatLabel
           />
         </div>
       </motion.div>

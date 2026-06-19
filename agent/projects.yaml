@@ -1,0 +1,12 @@
+# Spoken project names → GitHub repos for cloud / telephony mode.
+# Copy and edit for your org. Mount or set PROJECT_REGISTRY_PATH in production.
+
+projects:
+  - name: "ANN PROJECT"
+    aliases: ["ann", "ann project"]
+    repo: "https://github.com/org/ann-project"
+    branch: "main"
+  - name: "AI GF"
+    aliases: ["ai gf", "ai girlfriend"]
+    repo: "https://github.com/org/ai-gf-proj"
+    branch: "main"

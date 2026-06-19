@@ -211,6 +211,10 @@ export interface AgentControlBarProps extends UseInputControlsProps {
   onDisconnect?: () => void;
   /** The callback for when the chat is opened or closed. */
   onIsChatOpenChange?: (open: boolean) => void;
+  /** Optional label shown beside the chat toggle when chat is closed. */
+  chatToggleBadge?: string;
+  /** Show a text label next to the transcript toggle. */
+  showChatLabel?: boolean;
   /** The callback for when a device error occurs. */
   onDeviceError?: (error: { source: Track.Source; error: Error }) => void;
 }
@@ -248,6 +252,8 @@ export function AgentControlBar({
   onDisconnect,
   onDeviceError,
   onIsChatOpenChange,
+  chatToggleBadge,
+  showChatLabel = false,
   className,
   ...props
 }: AgentControlBarProps & ComponentProps<'div'>) {
@@ -307,8 +313,13 @@ export function AgentControlBar({
         />
       </motion.div>
 
-      <div className="flex gap-1">
-        <div className="flex grow gap-1">
+      <div
+        className={cn(
+          'flex gap-1',
+          variant === 'livekit' && 'grid grid-cols-[1fr_auto_1fr] items-center'
+        )}
+      >
+        <div className="flex gap-1 justify-self-start">
           {/* Toggle Microphone */}
           {visibleControls.microphone && (
             <AgentTrackControl
@@ -365,32 +376,48 @@ export function AgentControlBar({
               className={cn(variant === 'livekit' && [LK_TOGGLE_VARIANT_2, 'rounded-full'])}
             />
           )}
+        </div>
 
-          {/* Toggle Transcript */}
+        {/* Transcript — centered */}
+        <div className="flex items-center justify-center">
           {visibleControls.chat && (
-            <Toggle
-              variant={variant === 'outline' ? 'outline' : 'default'}
-              pressed={isChatOpen || isChatOpenUncontrolled}
-              aria-label="Toggle transcript"
-              onPressedChange={(state) => {
-                if (!onIsChatOpenChange) setIsChatOpenUncontrolled(state);
-                else onIsChatOpenChange(state);
-              }}
-              className={agentTrackToggleVariants({
-                variant: variant === 'outline' ? 'outline' : 'default',
-                className: cn(variant === 'livekit' && [LK_TOGGLE_VARIANT_2, 'rounded-full']),
-              })}
-            >
-              <MessageSquareTextIcon />
-            </Toggle>
+            <div className="relative flex items-center">
+              <Toggle
+                variant={variant === 'outline' ? 'outline' : 'default'}
+                pressed={isChatOpen || isChatOpenUncontrolled}
+                aria-label="Toggle transcript"
+                title={isChatOpen || isChatOpenUncontrolled ? 'Hide transcript' : 'Show transcript'}
+                onPressedChange={(state) => {
+                  if (!onIsChatOpenChange) setIsChatOpenUncontrolled(state);
+                  else onIsChatOpenChange(state);
+                }}
+                className={agentTrackToggleVariants({
+                  variant: variant === 'outline' ? 'outline' : 'default',
+                  className: cn(
+                    variant === 'livekit' && [LK_TOGGLE_VARIANT_2, 'rounded-full'],
+                    'gap-1.5 px-3'
+                  ),
+                })}
+              >
+                <MessageSquareTextIcon className="size-4" />
+                <span className="text-xs font-medium">Transcript</span>
+              </Toggle>
+              {chatToggleBadge && !(isChatOpen || isChatOpenUncontrolled) && (
+                <span className="bg-primary text-primary-foreground pointer-events-none absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full text-[9px] font-bold">
+                  {chatToggleBadge}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
+        <div className="flex justify-end">
         {/* Disconnect */}
         {visibleControls.leave && (
           <AgentDisconnectButton
             onClick={onDisconnect}
             disabled={!isConnected}
+            title="End voice session"
             className={cn(
               variant === 'livekit' &&
                 'bg-destructive/10 dark:bg-destructive/10 text-destructive hover:bg-destructive/20 dark:hover:bg-destructive/20 focus:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/4 rounded-full font-mono text-xs font-bold tracking-wider'
@@ -400,6 +427,7 @@ export function AgentControlBar({
             <span className="inline md:hidden">END</span>
           </AgentDisconnectButton>
         )}
+        </div>
       </div>
     </div>
   );
